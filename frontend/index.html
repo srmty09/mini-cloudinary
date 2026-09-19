@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Cloudinary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" rx="7" fill="var(--accent)"/>
+      <circle cx="8.5" cy="8.5" r="1.75" fill="white"/>
+      <path d="M4 17L9 11L12.5 15L16 10.5L20 17H4Z" fill="white"/>
+    </svg>
+    <span>Mini Cloudinary</span>
+  </div>
+  <div class="topbar-actions">
+    <span id="usernameLabel" class="username-label hidden"></span>
+    <button type="button" id="themeToggle" class="btn-icon" aria-label="Toggle dark mode">🌙</button>
+    <button id="logoutBtn" class="btn btn-ghost hidden">Log out</button>
+  </div>
+</header>
+
+<main id="authView" class="auth-view">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="24" height="24" rx="7" fill="var(--accent)"/>
+        <circle cx="8.5" cy="8.5" r="1.75" fill="white"/>
+        <path d="M4 17L9 11L12.5 15L16 10.5L20 17H4Z" fill="white"/>
+      </svg>
+      <span>Mini Cloudinary</span>
+    </div>
+    <div class="tabs">
+      <button type="button" class="tab active" id="loginTab">Log in</button>
+      <button type="button" class="tab" id="registerTab">Register</button>
+    </div>
+    <form id="authForm">
+      <label>Username
+        <input type="text" id="username" required autocomplete="username">
+      </label>
+      <label>Password
+        <input type="password" id="password" required autocomplete="current-password">
+      </label>
+      <p id="authError" class="error hidden"></p>
+      <button type="submit" class="btn btn-primary" id="authSubmit">Log in</button>
+    </form>
+  </div>
+</main>
+
+<main id="appView" class="app-view hidden">
+  <section class="upload-zone" id="dropzone">
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <p>Drag &amp; drop an image, or <span class="link">browse</span></p>
+    <div class="progress hidden" id="uploadProgress"><div class="progress-bar" id="uploadProgressBar"></div></div>
+    <p id="uploadError" class="error hidden"></p>
+  </section>
+
+  <section class="gallery">
+    <div class="gallery-header">
+      <p class="gallery-title">Your images</p>
+      <span class="gallery-count" id="galleryCount"></span>
+    </div>
+    <div class="gallery-grid" id="galleryGrid"></div>
+    <div class="pagination">
+      <button id="prevPage" class="btn btn-ghost">Prev</button>
+      <span id="pageLabel"></span>
+      <button id="nextPage" class="btn btn-ghost">Next</button>
+    </div>
+  </section>
+</main>
+
+<div id="transformModal" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close" id="closeModal">&times;</button>
+    <h2 class="modal-title">Edit image</h2>
+    <div class="transform-layout">
+
+      <div class="preview-pane">
+        <div class="preview-box">
+          <div class="preview-header">
+            <div class="preview-heading">
+              <p class="preview-label">Before</p>
+              <span class="preview-size" id="beforeSize"></span>
+            </div>
+            <div class="preview-actions">
+              <button type="button" class="btn-link" id="downloadBefore">Download</button>
+              <button type="button" class="btn-link danger" id="deleteImageBtn">Delete</button>
+            </div>
+          </div>
+          <img id="beforeImg" class="preview-img" alt="Original image">
+        </div>
+        <div class="preview-box">
+          <div class="preview-header">
+            <div class="preview-heading">
+              <p class="preview-label">After</p>
+              <span class="preview-size" id="afterSize"></span>
+            </div>
+            <button type="button" class="btn-link hidden" id="downloadAfter">Download</button>
+          </div>
+          <img id="afterImg" class="preview-img" alt="Transformed image">
+        </div>
+      </div>
+
+      <div class="controls-pane">
+        <h3>Resize</h3>
+        <div class="row">
+          <label>Width <input type="number" id="resizeWidth" min="1"></label>
+          <label>Height <input type="number" id="resizeHeight" min="1"></label>
+        </div>
+
+        <h3>Crop</h3>
+        <div class="row">
+          <label>X <input type="number" id="cropX" min="0"></label>
+          <label>Y <input type="number" id="cropY" min="0"></label>
+        </div>
+        <div class="row">
+          <label>Width <input type="number" id="cropWidth" min="1"></label>
+          <label>Height <input type="number" id="cropHeight" min="1"></label>
+        </div>
+
+        <h3>Rotate <span id="rotateValue">0&deg;</span></h3>
+        <input type="range" id="rotate" min="0" max="360" value="0">
+
+        <h3>Adjustments</h3>
+        <div class="toggles">
+          <label><input type="checkbox" id="flip"> Flip</label>
+          <label><input type="checkbox" id="mirror"> Mirror</label>
+          <label><input type="checkbox" id="grayscale"> Grayscale</label>
+          <label><input type="checkbox" id="sepia"> Sepia</label>
+        </div>
+
+        <h3>Output</h3>
+        <div class="row">
+          <label>Format
+            <select id="format">
+              <option value="">Original</option>
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+              <option value="webp">WEBP</option>
+            </select>
+          </label>
+        </div>
+        <label>Quality <span id="qualityValue">90</span>
+          <input type="range" id="quality" min="1" max="100" value="90">
+        </label>
+
+        <button type="button" id="applyTransform" class="btn btn-primary">Apply</button>
+        <p id="transformError" class="error hidden"></p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
