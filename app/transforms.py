@@ -1,5 +1,5 @@
 import io
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 CONTENT_TYPE_FORMAT = {
     "image/jpeg": "jpeg",
@@ -43,10 +43,27 @@ def apply_transforms(image_bytes, params, output_format):
         img = img.transpose(Image.FLIP_TOP_BOTTOM)
     if params.mirror:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+    needs_rgb = params.brightness or params.contrast or params.saturation or params.invert or params.blur or params.sharpen
+    if needs_rgb and img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    if params.brightness:
+        img = ImageEnhance.Brightness(img).enhance(params.brightness / 100)
+    if params.contrast:
+        img = ImageEnhance.Contrast(img).enhance(params.contrast / 100)
+    if params.saturation:
+        img = ImageEnhance.Color(img).enhance(params.saturation / 100)
     if params.grayscale:
         img = img.convert("L").convert("RGB")
     if params.sepia:
         img = img.convert("RGB").convert("RGB", SEPIA_MATRIX)
+    if params.invert:
+        img = ImageOps.invert(img)
+    if params.blur:
+        img = img.filter(ImageFilter.GaussianBlur(radius=params.blur))
+    if params.sharpen:
+        img = img.filter(ImageFilter.SHARPEN)
 
     if output_format == "jpeg" and img.mode in ("RGBA", "P", "LA"):
         img = img.convert("RGB")
