@@ -22,7 +22,6 @@
   </div>
   <div class="topbar-actions">
     <span id="usernameLabel" class="username-label hidden"></span>
-    <button type="button" id="themeToggle" class="btn-icon" aria-label="Toggle dark mode">🌙</button>
     <button id="logoutBtn" class="btn btn-ghost hidden">Log out</button>
   </div>
 </header>
@@ -56,8 +55,8 @@
 
 <main id="appView" class="app-view hidden">
   <section class="upload-zone" id="dropzone">
-    <input type="file" id="fileInput" accept="image/*" hidden>
-    <p>Drag &amp; drop an image, or <span class="link">browse</span></p>
+    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+    <p>Drag &amp; drop images, or <span class="link">browse</span></p>
     <div class="progress hidden" id="uploadProgress"><div class="progress-bar" id="uploadProgressBar"></div></div>
     <p id="uploadError" class="error hidden"></p>
   </section>
@@ -66,6 +65,18 @@
     <div class="gallery-header">
       <p class="gallery-title">Your images</p>
       <span class="gallery-count" id="galleryCount"></span>
+    </div>
+    <div class="gallery-toolbar">
+      <input type="search" id="searchInput" placeholder="Search by filename…" class="search-input">
+      <div class="custom-select">
+        <select id="sortSelect" class="sr-only-select">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="name">Name (A–Z)</option>
+          <option value="largest">Largest first</option>
+          <option value="smallest">Smallest first</option>
+        </select>
+      </div>
     </div>
     <div class="gallery-grid" id="galleryGrid"></div>
     <div class="pagination">
@@ -104,29 +115,44 @@
             </div>
             <button type="button" class="btn-link hidden" id="downloadAfter">Download</button>
           </div>
-          <img id="afterImg" class="preview-img" alt="Transformed image">
+          <img id="afterImg" class="preview-img hidden" alt="Transformed image">
+          <p id="afterPlaceholder" class="preview-placeholder">Apply a transform to see the result here</p>
         </div>
       </div>
 
       <div class="controls-pane">
         <h3>Resize</h3>
         <div class="row">
-          <label>Width <input type="number" id="resizeWidth" min="1"></label>
-          <label>Height <input type="number" id="resizeHeight" min="1"></label>
+          <label>Width <input type="number" id="resizeWidth" min="1" max="10000"></label>
+          <label>Height <input type="number" id="resizeHeight" min="1" max="10000"></label>
         </div>
 
         <h3>Crop</h3>
         <div class="row">
-          <label>X <input type="number" id="cropX" min="0"></label>
-          <label>Y <input type="number" id="cropY" min="0"></label>
+          <label>X <input type="number" id="cropX" min="0" max="100000"></label>
+          <label>Y <input type="number" id="cropY" min="0" max="100000"></label>
         </div>
         <div class="row">
-          <label>Width <input type="number" id="cropWidth" min="1"></label>
-          <label>Height <input type="number" id="cropHeight" min="1"></label>
+          <label>Width <input type="number" id="cropWidth" min="1" max="10000"></label>
+          <label>Height <input type="number" id="cropHeight" min="1" max="10000"></label>
         </div>
 
         <h3>Rotate <span id="rotateValue">0&deg;</span></h3>
         <input type="range" id="rotate" min="0" max="360" value="0">
+
+        <h3>Tune</h3>
+        <label>Brightness <span id="brightnessValue">100%</span>
+          <input type="range" id="brightness" min="0" max="200" value="100">
+        </label>
+        <label>Contrast <span id="contrastValue">100%</span>
+          <input type="range" id="contrast" min="0" max="200" value="100">
+        </label>
+        <label>Saturation <span id="saturationValue">100%</span>
+          <input type="range" id="saturation" min="0" max="200" value="100">
+        </label>
+        <label>Blur <span id="blurValue">0px</span>
+          <input type="range" id="blur" min="0" max="20" value="0">
+        </label>
 
         <h3>Adjustments</h3>
         <div class="toggles">
@@ -134,17 +160,21 @@
           <label><input type="checkbox" id="mirror"> Mirror</label>
           <label><input type="checkbox" id="grayscale"> Grayscale</label>
           <label><input type="checkbox" id="sepia"> Sepia</label>
+          <label><input type="checkbox" id="invert"> Invert</label>
+          <label><input type="checkbox" id="sharpen"> Sharpen</label>
         </div>
 
         <h3>Output</h3>
         <div class="row">
           <label>Format
-            <select id="format">
-              <option value="">Original</option>
-              <option value="jpeg">JPEG</option>
-              <option value="png">PNG</option>
-              <option value="webp">WEBP</option>
-            </select>
+            <div class="custom-select">
+              <select id="format" class="sr-only-select">
+                <option value="">Original</option>
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+                <option value="webp">WEBP</option>
+              </select>
+            </div>
           </label>
         </div>
         <label>Quality <span id="qualityValue">90</span>
@@ -157,6 +187,11 @@
 
     </div>
   </div>
+</div>
+
+<div id="lightbox" class="lightbox hidden">
+  <button type="button" class="lightbox-close" id="lightboxClose">&times;</button>
+  <img id="lightboxImg" class="lightbox-img" alt="Full size preview">
 </div>
 
 <div id="toastContainer" class="toast-container" aria-live="polite"></div>
