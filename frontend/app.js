@@ -1,20 +1,12 @@
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-function getPreferredTheme() {
-  const saved = localStorage.getItem("theme");
-  if (saved) return saved;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("theme", theme);
-  const toggle = document.getElementById("themeToggle");
-  if (toggle) toggle.textContent = theme === "dark" ? "☀️" : "🌙";
-}
-
-applyTheme(getPreferredTheme());
+const ICONS = {
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+  compress: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+};
 
 const state = {
   token: localStorage.getItem("token") || null,
@@ -24,6 +16,8 @@ const state = {
   images: [],
   activeImage: null,
   authMode: "login",
+  query: "",
+  sort: "newest",
 };
 
 const els = {
@@ -50,6 +44,7 @@ const els = {
   closeModal: document.getElementById("closeModal"),
   beforeImg: document.getElementById("beforeImg"),
   afterImg: document.getElementById("afterImg"),
+  afterPlaceholder: document.getElementById("afterPlaceholder"),
   downloadBefore: document.getElementById("downloadBefore"),
   downloadAfter: document.getElementById("downloadAfter"),
   deleteImageBtn: document.getElementById("deleteImageBtn"),
@@ -61,10 +56,20 @@ const els = {
   cropHeight: document.getElementById("cropHeight"),
   rotate: document.getElementById("rotate"),
   rotateValue: document.getElementById("rotateValue"),
+  brightness: document.getElementById("brightness"),
+  brightnessValue: document.getElementById("brightnessValue"),
+  contrast: document.getElementById("contrast"),
+  contrastValue: document.getElementById("contrastValue"),
+  saturation: document.getElementById("saturation"),
+  saturationValue: document.getElementById("saturationValue"),
+  blur: document.getElementById("blur"),
+  blurValue: document.getElementById("blurValue"),
   flip: document.getElementById("flip"),
   mirror: document.getElementById("mirror"),
   grayscale: document.getElementById("grayscale"),
   sepia: document.getElementById("sepia"),
+  invert: document.getElementById("invert"),
+  sharpen: document.getElementById("sharpen"),
   format: document.getElementById("format"),
   quality: document.getElementById("quality"),
   qualityValue: document.getElementById("qualityValue"),
@@ -73,18 +78,26 @@ const els = {
   beforeSize: document.getElementById("beforeSize"),
   afterSize: document.getElementById("afterSize"),
   toastContainer: document.getElementById("toastContainer"),
-  themeToggle: document.getElementById("themeToggle"),
   usernameLabel: document.getElementById("usernameLabel"),
   galleryCount: document.getElementById("galleryCount"),
+  searchInput: document.getElementById("searchInput"),
+  sortSelect: document.getElementById("sortSelect"),
+  lightbox: document.getElementById("lightbox"),
+  lightboxImg: document.getElementById("lightboxImg"),
+  lightboxClose: document.getElementById("lightboxClose"),
 };
-
-els.themeToggle.addEventListener("click", () => {
-  const current = document.documentElement.getAttribute("data-theme");
-  applyTheme(current === "dark" ? "light" : "dark");
-});
 
 function authHeaders() {
   return { Authorization: `Bearer ${state.token}` };
+}
+
+function errorDetail(err, fallback) {
+  const detail = err && err.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail[0].msg.replace(/^Value error,\s*/, "");
+  }
+  return fallback;
 }
 
 function formatBytes(bytes) {
@@ -96,6 +109,79 @@ function formatBytes(bytes) {
 function formatDate(isoString) {
   return new Date(isoString).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+function closeAllCustomSelects() {
+  document.querySelectorAll(".custom-select-options").forEach((list) => list.classList.add("hidden"));
+  document.querySelectorAll(".custom-select-trigger").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
+}
+
+function enhanceSelect(selectEl) {
+  const wrapper = selectEl.parentElement;
+  selectEl.setAttribute("tabindex", "-1");
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "custom-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const label = document.createElement("span");
+  trigger.appendChild(label);
+
+  const chevron = document.createElement("span");
+  chevron.className = "custom-select-chevron";
+  chevron.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  trigger.appendChild(chevron);
+
+  const listbox = document.createElement("ul");
+  listbox.className = "custom-select-options hidden";
+  listbox.setAttribute("role", "listbox");
+
+  const optionEls = Array.from(selectEl.options).map((opt) => {
+    const li = document.createElement("li");
+    li.className = "custom-select-option";
+    li.textContent = opt.textContent;
+    li.dataset.value = opt.value;
+    li.setAttribute("role", "option");
+    li.addEventListener("click", () => {
+      selectEl.value = opt.value;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+      closeAllCustomSelects();
+    });
+    listbox.appendChild(li);
+    return li;
+  });
+
+  function syncLabel() {
+    const selected = selectEl.options[selectEl.selectedIndex];
+    label.textContent = selected ? selected.textContent : "";
+    optionEls.forEach((li) => {
+      const isSelected = li.dataset.value === selectEl.value;
+      li.classList.toggle("selected", isSelected);
+      li.setAttribute("aria-selected", String(isSelected));
+    });
+  }
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = !listbox.classList.contains("hidden");
+    closeAllCustomSelects();
+    if (!isOpen) {
+      listbox.classList.remove("hidden");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  selectEl.addEventListener("change", syncLabel);
+
+  wrapper.appendChild(trigger);
+  wrapper.appendChild(listbox);
+  syncLabel();
+}
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".custom-select")) closeAllCustomSelects();
+});
 
 function showToast(message, { type = "info", actionLabel, onAction, duration = 5000 } = {}) {
   const toast = document.createElement("div");
@@ -152,7 +238,7 @@ els.authForm.addEventListener("submit", async (event) => {
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Something went wrong");
+      throw new Error(errorDetail(err, "Something went wrong"));
     }
     const data = await response.json();
     state.token = data.access_token;
@@ -183,76 +269,125 @@ els.dropzone.addEventListener("dragleave", () => els.dropzone.classList.remove("
 els.dropzone.addEventListener("drop", (event) => {
   event.preventDefault();
   els.dropzone.classList.remove("dragover");
-  if (event.dataTransfer.files.length) uploadFile(event.dataTransfer.files[0]);
+  if (event.dataTransfer.files.length) uploadFiles(event.dataTransfer.files);
 });
 els.fileInput.addEventListener("change", () => {
-  if (els.fileInput.files.length) uploadFile(els.fileInput.files[0]);
+  if (els.fileInput.files.length) uploadFiles(els.fileInput.files);
 });
 
-function uploadFile(file) {
-  els.uploadError.classList.add("hidden");
-
-  if (file.size > MAX_UPLOAD_SIZE) {
-    els.uploadError.textContent = "File too large (max 10 MB)";
-    els.uploadError.classList.remove("hidden");
-    return;
-  }
-  if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
-    els.uploadError.textContent = "Unsupported file type — use JPEG, PNG, WEBP, or GIF";
-    els.uploadError.classList.remove("hidden");
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  els.uploadProgress.classList.remove("hidden");
-  els.uploadProgressBar.style.width = "0%";
-
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", "/images");
-  xhr.setRequestHeader("Authorization", `Bearer ${state.token}`);
-  xhr.upload.addEventListener("progress", (event) => {
-    if (event.lengthComputable) {
-      els.uploadProgressBar.style.width = `${Math.round((event.loaded / event.total) * 100)}%`;
-    }
-  });
-  xhr.onload = () => {
-    els.uploadProgress.classList.add("hidden");
-    els.fileInput.value = "";
-    if (xhr.status >= 200 && xhr.status < 300) {
-      state.page = 1;
-      loadImages();
-      showToast(`Uploaded ${file.name}`, { type: "success" });
+function uploadSingleFile(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > MAX_UPLOAD_SIZE) {
+      reject(new Error("too large (max 10 MB)"));
       return;
     }
-    let message = "Upload failed";
-    try {
-      message = JSON.parse(xhr.responseText).detail || message;
-    } catch {
-      if (xhr.status === 500) message = "Upload failed — the server hit an error (is storage configured?)";
+    if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
+      reject(new Error("unsupported file type"));
+      return;
     }
-    els.uploadError.textContent = message;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/images");
+    xhr.setRequestHeader("Authorization", `Bearer ${state.token}`);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        els.uploadProgressBar.style.width = `${Math.round((event.loaded / event.total) * 100)}%`;
+      }
+    });
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      let message = "upload failed";
+      try {
+        message = JSON.parse(xhr.responseText).detail || message;
+      } catch {
+        if (xhr.status === 500) message = "server error (is storage configured?)";
+      }
+      reject(new Error(message));
+    };
+    xhr.onerror = () => reject(new Error("could not reach the server"));
+    xhr.send(formData);
+  });
+}
+
+async function uploadFiles(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
+
+  els.uploadError.classList.add("hidden");
+  els.uploadProgress.classList.remove("hidden");
+
+  const succeeded = [];
+  const failed = [];
+
+  for (const file of files) {
+    els.uploadProgressBar.style.width = "0%";
+    try {
+      await uploadSingleFile(file);
+      succeeded.push(file.name);
+    } catch (err) {
+      failed.push(`${file.name} — ${err.message}`);
+    }
+  }
+
+  els.uploadProgress.classList.add("hidden");
+  els.fileInput.value = "";
+
+  if (succeeded.length) {
+    state.page = 1;
+    loadImages();
+    const label = succeeded.length === 1 ? succeeded[0] : `${succeeded.length} images`;
+    showToast(`Uploaded ${label}`, { type: "success" });
+  }
+  if (failed.length) {
+    els.uploadError.textContent = failed.join("; ");
     els.uploadError.classList.remove("hidden");
-  };
-  xhr.onerror = () => {
-    els.uploadProgress.classList.add("hidden");
-    els.uploadError.textContent = "Upload failed — could not reach the server";
-    els.uploadError.classList.remove("hidden");
-  };
-  xhr.send(formData);
+  }
 }
 
 async function loadImages() {
   els.galleryGrid.innerHTML = '<p class="gallery-empty">Loading…</p>';
-  const response = await fetch(`/images?page=${state.page}&limit=${state.limit}`, {
-    headers: authHeaders(),
-  });
+  const params = new URLSearchParams({ page: state.page, limit: state.limit, sort: state.sort });
+  if (state.query) params.set("q", state.query);
+
+  const response = await fetch(`/images?${params}`, { headers: authHeaders() });
   if (!response.ok) return;
   const data = await response.json();
   state.images = data.items;
   state.total = data.total;
   renderGallery();
+}
+
+let searchDebounce;
+els.searchInput.addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    state.query = els.searchInput.value.trim();
+    state.page = 1;
+    loadImages();
+  }, 300);
+});
+
+els.sortSelect.addEventListener("change", () => {
+  state.sort = els.sortSelect.value;
+  state.page = 1;
+  loadImages();
+});
+
+function iconButton(iconName, label, onClick, danger) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `card-icon-btn${danger ? " danger" : ""}`;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = ICONS[iconName];
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
 function renderGallery() {
@@ -262,7 +397,9 @@ function renderGallery() {
   if (state.images.length === 0) {
     const empty = document.createElement("p");
     empty.className = "gallery-empty";
-    empty.textContent = "No images yet — drag one into the box above to get started.";
+    empty.textContent = state.query
+      ? `No images match "${state.query}".`
+      : "No images yet — drag one into the box above to get started.";
     els.galleryGrid.appendChild(empty);
     els.pageLabel.textContent = "";
     els.prevPage.disabled = true;
@@ -276,10 +413,49 @@ function renderGallery() {
 
     const thumbWrap = document.createElement("div");
     thumbWrap.className = "gallery-thumb-wrap";
+
     const img = document.createElement("img");
     img.className = "gallery-thumb";
     loadImageBlob(`/images/${image.id}`, img);
     thumbWrap.appendChild(img);
+
+    const badge = document.createElement("span");
+    badge.className = "format-badge";
+    badge.textContent = (image.content_type.split("/")[1] || "").replace("jpeg", "jpg");
+    thumbWrap.appendChild(badge);
+
+    const overlay = document.createElement("div");
+    overlay.className = "card-overlay";
+    overlay.appendChild(
+      iconButton("eye", "Preview", (event) => {
+        event.stopPropagation();
+        openLightbox(img);
+      })
+    );
+    overlay.appendChild(
+      iconButton("download", "Download", (event) => {
+        event.stopPropagation();
+        if (img.src) triggerDownload(img.src, image.original_filename);
+      })
+    );
+    overlay.appendChild(
+      iconButton("compress", "Compress", (event) => {
+        event.stopPropagation();
+        compressImage(image);
+      })
+    );
+    overlay.appendChild(
+      iconButton(
+        "trash",
+        "Delete",
+        (event) => {
+          event.stopPropagation();
+          deleteImage(image);
+        },
+        true
+      )
+    );
+    thumbWrap.appendChild(overlay);
 
     const name = document.createElement("p");
     name.className = "gallery-filename";
@@ -287,46 +463,12 @@ function renderGallery() {
 
     const meta = document.createElement("p");
     meta.className = "gallery-meta";
-    meta.textContent = `${formatBytes(image.size)} · ${formatDate(image.created_at)}`;
-
-    const actions = document.createElement("div");
-    actions.className = "gallery-card-actions";
-
-    const downloadBtn = document.createElement("button");
-    downloadBtn.type = "button";
-    downloadBtn.className = "btn-link";
-    downloadBtn.textContent = "Download";
-    downloadBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (img.src) triggerDownload(img.src, image.original_filename);
-    });
-
-    const compressBtn = document.createElement("button");
-    compressBtn.type = "button";
-    compressBtn.className = "btn-link";
-    compressBtn.textContent = "Compress";
-    compressBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      compressImage(image);
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "btn-link danger";
-    deleteBtn.textContent = "Delete";
-    deleteBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      deleteImage(image);
-    });
-
-    actions.appendChild(downloadBtn);
-    actions.appendChild(compressBtn);
-    actions.appendChild(deleteBtn);
+    const dims = image.width && image.height ? `${image.width}×${image.height} · ` : "";
+    meta.textContent = `${dims}${formatBytes(image.size)} · ${formatDate(image.created_at)}`;
 
     card.appendChild(thumbWrap);
     card.appendChild(name);
     card.appendChild(meta);
-    card.appendChild(actions);
     card.addEventListener("click", () => openTransformModal(image));
     els.galleryGrid.appendChild(card);
   });
@@ -337,11 +479,37 @@ function renderGallery() {
   els.nextPage.disabled = state.page >= totalPages;
 }
 
+function openLightbox(imgEl) {
+  if (!imgEl.src) return;
+  els.lightboxImg.src = imgEl.src;
+  els.lightbox.classList.remove("hidden");
+}
+
+function closeLightbox() {
+  els.lightbox.classList.add("hidden");
+}
+
+els.lightboxClose.addEventListener("click", closeLightbox);
+els.lightbox.addEventListener("click", (event) => {
+  if (event.target === els.lightbox) closeLightbox();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!els.lightbox.classList.contains("hidden")) closeLightbox();
+  else if (!els.transformModal.classList.contains("hidden")) els.transformModal.classList.add("hidden");
+  else closeAllCustomSelects();
+});
+
 async function loadImageBlob(url, imgEl) {
   const response = await fetch(url, { headers: authHeaders() });
   if (!response.ok) return null;
   const blob = await response.blob();
   imgEl.src = URL.createObjectURL(blob);
+  await new Promise((resolve) => {
+    imgEl.onload = resolve;
+    imgEl.onerror = resolve;
+  });
   return blob.size;
 }
 
@@ -363,10 +531,13 @@ function openTransformModal(image) {
   state.activeImage = image;
   els.transformModal.classList.remove("hidden");
   els.transformError.classList.add("hidden");
-  els.beforeSize.textContent = formatBytes(image.size);
+  const dims = image.width && image.height ? `${image.width}×${image.height} · ` : "";
+  els.beforeSize.textContent = `${dims}${formatBytes(image.size)}`;
   els.afterSize.textContent = "";
   loadImageBlob(`/images/${image.id}`, els.beforeImg);
   els.afterImg.src = "";
+  els.afterImg.classList.add("hidden");
+  els.afterPlaceholder.classList.remove("hidden");
   els.downloadAfter.classList.add("hidden");
   resetTransformControls();
 }
@@ -389,7 +560,7 @@ async function compressImage(image) {
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Compress failed");
+      throw new Error(errorDetail(err, "Compress failed"));
     }
     const data = await response.json();
     const tempImg = new Image();
@@ -429,7 +600,7 @@ async function deleteImage(image, onError) {
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Delete failed");
+      throw new Error(errorDetail(err, "Delete failed"));
     }
     if (state.activeImage && state.activeImage.id === image.id) {
       els.transformModal.classList.add("hidden");
@@ -459,11 +630,22 @@ function resetTransformControls() {
   els.cropHeight.value = "";
   els.rotate.value = 0;
   els.rotateValue.textContent = "0°";
+  els.brightness.value = 100;
+  els.brightnessValue.textContent = "100%";
+  els.contrast.value = 100;
+  els.contrastValue.textContent = "100%";
+  els.saturation.value = 100;
+  els.saturationValue.textContent = "100%";
+  els.blur.value = 0;
+  els.blurValue.textContent = "0px";
   els.flip.checked = false;
   els.mirror.checked = false;
   els.grayscale.checked = false;
   els.sepia.checked = false;
+  els.invert.checked = false;
+  els.sharpen.checked = false;
   els.format.value = "";
+  els.format.dispatchEvent(new Event("change"));
   els.quality.value = 90;
   els.qualityValue.textContent = "90";
 }
@@ -477,6 +659,18 @@ els.rotate.addEventListener("input", () => {
 });
 els.quality.addEventListener("input", () => {
   els.qualityValue.textContent = els.quality.value;
+});
+els.brightness.addEventListener("input", () => {
+  els.brightnessValue.textContent = `${els.brightness.value}%`;
+});
+els.contrast.addEventListener("input", () => {
+  els.contrastValue.textContent = `${els.contrast.value}%`;
+});
+els.saturation.addEventListener("input", () => {
+  els.saturationValue.textContent = `${els.saturation.value}%`;
+});
+els.blur.addEventListener("input", () => {
+  els.blurValue.textContent = `${els.blur.value}px`;
 });
 
 function buildTransformPayload() {
@@ -497,10 +691,16 @@ function buildTransformPayload() {
     };
   }
   if (Number(els.rotate.value)) payload.rotate = Number(els.rotate.value);
+  if (Number(els.brightness.value) !== 100) payload.brightness = Number(els.brightness.value);
+  if (Number(els.contrast.value) !== 100) payload.contrast = Number(els.contrast.value);
+  if (Number(els.saturation.value) !== 100) payload.saturation = Number(els.saturation.value);
+  if (Number(els.blur.value) > 0) payload.blur = Number(els.blur.value);
   if (els.flip.checked) payload.flip = true;
   if (els.mirror.checked) payload.mirror = true;
   if (els.grayscale.checked) payload.grayscale = true;
   if (els.sepia.checked) payload.sepia = true;
+  if (els.invert.checked) payload.invert = true;
+  if (els.sharpen.checked) payload.sharpen = true;
   if (els.format.value) payload.format = els.format.value;
   payload.compress_quality = Number(els.quality.value);
 
@@ -519,10 +719,12 @@ els.applyTransform.addEventListener("click", async () => {
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Transform failed");
+      throw new Error(errorDetail(err, "Transform failed"));
     }
     const data = await response.json();
     const afterBytes = await loadImageBlob(data.url, els.afterImg);
+    els.afterPlaceholder.classList.add("hidden");
+    els.afterImg.classList.remove("hidden");
     const ext = data.storage_key.split(".").pop();
     els.downloadAfter.dataset.filename = `transformed.${ext}`;
     els.downloadAfter.classList.remove("hidden");
@@ -530,7 +732,8 @@ els.applyTransform.addEventListener("click", async () => {
     if (afterBytes != null) {
       const pct = Math.round((1 - afterBytes / state.activeImage.size) * 100);
       const change = pct >= 0 ? `-${pct}%` : `+${Math.abs(pct)}%`;
-      els.afterSize.textContent = `${formatBytes(afterBytes)} (${change})`;
+      const afterDims = els.afterImg.naturalWidth ? `${els.afterImg.naturalWidth}×${els.afterImg.naturalHeight} · ` : "";
+      els.afterSize.textContent = `${afterDims}${formatBytes(afterBytes)} (${change})`;
     }
   } catch (err) {
     els.transformError.textContent = err.message;
@@ -540,6 +743,9 @@ els.applyTransform.addEventListener("click", async () => {
     els.applyTransform.textContent = "Apply";
   }
 });
+
+enhanceSelect(els.sortSelect);
+enhanceSelect(els.format);
 
 if (state.token) {
   showAuthed(true);
