@@ -38,5 +38,10 @@ def file_exists(key):
         return False
 
 
+def get_file_size(key):
+    response = _get_client().head_object(Bucket=settings.r2_bucket, Key=key)
+    return response["ContentLength"]
+
+
 def delete_file(key):
     _get_client().delete_object(Bucket=settings.r2_bucket, Key=key)
