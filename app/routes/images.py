@@ -10,6 +10,8 @@ from app.database import get_db
 from app import models, schemas, storage
 from app.auth import get_current_user
 from app.transforms import apply_transforms, format_for_content_type, FORMAT_EXT, FORMAT_CONTENT_TYPE
+from app.rate_limit import rate_limit_per_user
+from app.quota import check_storage_quota
 
 router = APIRouter()
 
@@ -29,12 +31,15 @@ async def upload_image(
     try:
         probe = Image.open(io.BytesIO(data))
         detected_format = (probe.format or "").lower()
+        width, height = probe.size
         probe.verify()
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is not a valid image")
 
     if detected_format not in FORMAT_EXT:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported image format: {detected_format}")
+
+    check_storage_quota(db, user.id, len(data))
 
     image_id = uuid.uuid4()
     ext = FORMAT_EXT[detected_format]
@@ -49,6 +54,8 @@ async def upload_image(
         storage_key=storage_key,
         content_type=content_type,
         size=len(data),
+        width=width,
+        height=height,
         original_filename=file.filename,
     )
     db.add(image)
@@ -79,14 +86,29 @@ def delete_image(
     return {"detail": "deleted"}
 
 
+SORT_OPTIONS = {
+    "newest": models.Image.created_at.desc(),
+    "oldest": models.Image.created_at.asc(),
+    "name": models.Image.original_filename.asc(),
+    "largest": models.Image.size.desc(),
+    "smallest": models.Image.size.asc(),
+}
+
+
 @router.get("/images", response_model=schemas.ImageList)
 def list_images(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
+    q: str = Query(None),
+    sort: str = Query("newest"),
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    query = db.query(models.Image).filter(models.Image.user_id == user.id).order_by(models.Image.created_at.desc())
+    query = db.query(models.Image).filter(models.Image.user_id == user.id)
+    if q:
+        query = query.filter(models.Image.original_filename.ilike(f"%{q}%"))
+    query = query.order_by(SORT_OPTIONS.get(sort, SORT_OPTIONS["newest"]))
+
     total = query.count()
     items = query.offset((page - 1) * limit).limit(limit).all()
     return {"items": items, "page": page, "limit": limit, "total": total}
@@ -106,7 +128,11 @@ def get_image(
     return StreamingResponse(io.BytesIO(data), media_type=image.content_type)
 
 
-@router.post("/images/{image_id}/transform", response_model=schemas.TransformOut)
+@router.post(
+    "/images/{image_id}/transform",
+    response_model=schemas.TransformOut,
+    dependencies=[Depends(rate_limit_per_user("transform"))],
+)
 def transform_image(
     image_id: uuid.UUID,
     payload: schemas.TransformRequest,
@@ -135,9 +161,13 @@ def transform_image(
         if not storage.file_exists(derived_key):
             original_bytes = storage.get_file(image.storage_key)
             result_bytes, content_type = apply_transforms(original_bytes, payload, output_format)
+            check_storage_quota(db, user.id, len(result_bytes))
             storage.upload_file(derived_key, result_bytes, content_type)
+            size = len(result_bytes)
+        else:
+            size = storage.get_file_size(derived_key)
 
-        transform = models.ImageTransform(image_id=image_id, storage_key=derived_key, transform_params=params)
+        transform = models.ImageTransform(image_id=image_id, storage_key=derived_key, size=size, transform_params=params)
         db.add(transform)
         db.commit()
         db.refresh(transform)
@@ -146,6 +176,7 @@ def transform_image(
         id=transform.id,
         image_id=transform.image_id,
         storage_key=transform.storage_key,
+        size=transform.size,
         transform_params=transform.transform_params,
         created_at=transform.created_at,
         url=f"/images/{image_id}/transforms/{transform.id}",
